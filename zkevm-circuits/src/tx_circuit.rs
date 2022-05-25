@@ -171,8 +171,9 @@ pub enum TxFieldTag {
     CallData,
 }
 
+/// COnfig for TxCircuit
 #[derive(Clone, Debug)]
-struct TxCircuitConfig<F: Field> {
+pub struct TxCircuitConfig<F: Field> {
     tx_id: Column<Advice>,
     tag: Column<Advice>,
     index: Column<Advice>,
@@ -219,8 +220,9 @@ impl<F: Field> TxCircuitConfig<F> {
     }
 }
 
+/// Tx Circuit for verifying transaction signatures
 #[derive(Default)]
-struct TxCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
+pub struct TxCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     sign_verify: SignVerifyChip<F, MAX_TXS>,
     randomness: F,
     txs: Vec<Transaction>,
