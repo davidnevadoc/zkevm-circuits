@@ -35,4 +35,5 @@ esac
 cd $target_dir;
 logfile=$_date--${circuit}_bench-$k.proverlog
 
+export RUST_BACKTRACE=1
 DEGREE=$k ~/.cargo/bin/cargo test --profile bench bench_${run_suffix} -p circuit-benchmarks --features benches  -- --nocapture > "$target_dir/$logfile" 2>&1

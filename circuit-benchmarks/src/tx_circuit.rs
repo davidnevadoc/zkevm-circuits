@@ -4,6 +4,7 @@
 mod tests {
     use crate::bench_params::DEGREE;
     use ark_std::{end_timer, start_timer};
+    use env_logger::Env;
     use group::{Curve, Group};
     use halo2_proofs::arithmetic::{CurveAffine, Field};
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
@@ -21,6 +22,8 @@ mod tests {
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_tx_circuit_prover() {
+        env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+
         // Approximate value, adjust with changes on the TxCircuit.
         const ROWS_PER_TX: usize = 175_000;
         const MAX_TXS: usize = 2_usize.pow(DEGREE as u32) / ROWS_PER_TX;
