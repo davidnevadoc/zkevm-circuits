@@ -4,7 +4,7 @@
 // - *_be: Big-Endian bytes
 // - *_le: Little-Endian bytes
 
-mod sign_verify;
+pub mod sign_verify;
 
 use crate::util::{random_linear_combine_word as rlc, Expr};
 use eth_types::{
@@ -223,10 +223,14 @@ impl<F: Field> TxCircuitConfig<F> {
 /// Tx Circuit for verifying transaction signatures
 #[derive(Default)]
 pub struct TxCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
-    sign_verify: SignVerifyChip<F, MAX_TXS>,
-    randomness: F,
-    txs: Vec<Transaction>,
-    chain_id: u64,
+    /// SignVerify chip
+    pub sign_verify: SignVerifyChip<F, MAX_TXS>,
+    /// Randomness for RLC encoding
+    pub randomness: F,
+    /// List of Transactions
+    pub txs: Vec<Transaction>,
+    /// Chain ID
+    pub chain_id: u64,
 }
 
 /// Assigns a tx circuit row and returns the assigned cell of the value in

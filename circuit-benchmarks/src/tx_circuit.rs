@@ -4,15 +4,61 @@
 mod tests {
     use crate::bench_params::DEGREE;
     use ark_std::{end_timer, start_timer};
+    use eth_types::geth_types::Transaction;
+    use ethers_core::{
+        types::{NameOrAddress, TransactionRequest},
+        utils::keccak256,
+    };
+    use ethers_signers::{LocalWallet, Signer};
+    use group::{Curve, Group};
+    use halo2_proofs::arithmetic::{CurveAffine, Field};
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
     use halo2_proofs::{
         pairing::bn256::{Bn256, Fr, G1Affine},
         poly::commitment::{Params, ParamsVerifier},
         transcript::{Blake2bRead, Blake2bWrite, Challenge255},
     };
-    use rand::SeedableRng;
-    use rand_xorshift::XorShiftRng;
-    use zkevm_circuits::tx_circuit::TxCircuit;
+    use rand::{CryptoRng, Rng, SeedableRng};
+    use rand_chacha::ChaCha20Rng;
+    use secp256k1::Secp256k1Affine;
+    use std::marker::PhantomData;
+    use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, TxCircuit};
+
+    fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {
+        let wallet0 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+        let wallet1 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+        let from = wallet0.address();
+        let to = wallet1.address();
+        let data = b"hello";
+        let tx = TransactionRequest::new()
+            .from(from)
+            .to(to)
+            .nonce(3)
+            .value(1000)
+            .data(data)
+            .gas(500_000)
+            .gas_price(1234);
+        let tx_rlp = tx.rlp(chain_id);
+        let sighash = keccak256(tx_rlp.as_ref()).into();
+        let sig = wallet0.sign_hash(sighash, true);
+        let to = tx.to.map(|to| match to {
+            NameOrAddress::Address(a) => a,
+            _ => unreachable!(),
+        });
+        Transaction {
+            from: tx.from.unwrap(),
+            to,
+            gas_limit: tx.gas.unwrap(),
+            gas_price: tx.gas_price.unwrap(),
+            value: tx.value.unwrap(),
+            call_data: tx.data.unwrap(),
+            nonce: tx.nonce.unwrap(),
+            v: sig.v,
+            r: sig.r,
+            s: sig.s,
+            ..Transaction::default()
+        }
+    }
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -21,13 +67,29 @@ mod tests {
         const ROWS_PER_TX: usize = 175_000;
         const MAX_TXS: usize = 2_usize.pow(DEGREE as u32) / ROWS_PER_TX;
         const MAX_CALLDATA: usize = 1024;
-        let empty_circuit = TxCircuit::<Fr, MAX_TXS, MAX_CALLDATA>::default();
 
-        // Initialize the polynomial commitment parameters
-        let rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-            0xbc, 0xe5,
-        ]);
+        const NUM_TXS: usize = MAX_TXS;
+
+        let mut rng = ChaCha20Rng::seed_from_u64(2);
+        let aux_generator =
+            <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
+        let chain_id: u64 = 1337;
+        let mut txs = Vec::new();
+        for _ in 0..NUM_TXS {
+            txs.push(rand_tx(&mut rng, chain_id));
+        }
+
+        let randomness = Fr::random(&mut rng);
+        let circuit = TxCircuit::<Fr, MAX_TXS, MAX_CALLDATA> {
+            sign_verify: SignVerifyChip {
+                aux_generator,
+                window_size: 2,
+                _marker: PhantomData,
+            },
+            randomness,
+            txs,
+            chain_id,
+        };
 
         // Bench setup generation
         let setup_message = format!(
@@ -41,8 +103,8 @@ mod tests {
         end_timer!(start1);
 
         // Initialize the proving key
-        let vk = keygen_vk(&general_params, &empty_circuit).expect("keygen_vk should not fail");
-        let pk = keygen_pk(&general_params, vk, &empty_circuit).expect("keygen_pk should not fail");
+        let vk = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
+        let pk = keygen_pk(&general_params, vk, &circuit).expect("keygen_pk should not fail");
         // Create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
@@ -52,7 +114,7 @@ mod tests {
         create_proof(
             &general_params,
             &pk,
-            &[empty_circuit],
+            &[circuit],
             &[&[]],
             rng,
             &mut transcript,
