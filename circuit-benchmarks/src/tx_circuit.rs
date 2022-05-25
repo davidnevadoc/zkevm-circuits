@@ -4,12 +4,6 @@
 mod tests {
     use crate::bench_params::DEGREE;
     use ark_std::{end_timer, start_timer};
-    use eth_types::geth_types::Transaction;
-    use ethers_core::{
-        types::{NameOrAddress, TransactionRequest},
-        utils::keccak256,
-    };
-    use ethers_signers::{LocalWallet, Signer};
     use group::{Curve, Group};
     use halo2_proofs::arithmetic::{CurveAffine, Field};
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
@@ -18,47 +12,11 @@ mod tests {
         poly::commitment::{Params, ParamsVerifier},
         transcript::{Blake2bRead, Blake2bWrite, Challenge255},
     };
-    use rand::{CryptoRng, Rng, SeedableRng};
-    use rand_chacha::ChaCha20Rng;
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
     use secp256k1::Secp256k1Affine;
     use std::marker::PhantomData;
     use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, TxCircuit};
-
-    fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {
-        let wallet0 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
-        let wallet1 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
-        let from = wallet0.address();
-        let to = wallet1.address();
-        let data = b"hello";
-        let tx = TransactionRequest::new()
-            .from(from)
-            .to(to)
-            .nonce(3)
-            .value(1000)
-            .data(data)
-            .gas(500_000)
-            .gas_price(1234);
-        let tx_rlp = tx.rlp(chain_id);
-        let sighash = keccak256(tx_rlp.as_ref()).into();
-        let sig = wallet0.sign_hash(sighash, true);
-        let to = tx.to.map(|to| match to {
-            NameOrAddress::Address(a) => a,
-            _ => unreachable!(),
-        });
-        Transaction {
-            from: tx.from.unwrap(),
-            to,
-            gas_limit: tx.gas.unwrap(),
-            gas_price: tx.gas_price.unwrap(),
-            value: tx.value.unwrap(),
-            call_data: tx.data.unwrap(),
-            nonce: tx.nonce.unwrap(),
-            v: sig.v,
-            r: sig.r,
-            s: sig.s,
-            ..Transaction::default()
-        }
-    }
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -68,16 +26,14 @@ mod tests {
         const MAX_TXS: usize = 2_usize.pow(DEGREE as u32) / ROWS_PER_TX;
         const MAX_CALLDATA: usize = 1024;
 
-        const NUM_TXS: usize = MAX_TXS;
-
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
+        let mut rng = XorShiftRng::from_seed([
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+            0xbc, 0xe5,
+        ]);
         let aux_generator =
             <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
         let chain_id: u64 = 1337;
-        let mut txs = Vec::new();
-        for _ in 0..NUM_TXS {
-            txs.push(rand_tx(&mut rng, chain_id));
-        }
+        let txs = Vec::new();
 
         let randomness = Fr::random(&mut rng);
         let circuit = TxCircuit::<Fr, MAX_TXS, MAX_CALLDATA> {
