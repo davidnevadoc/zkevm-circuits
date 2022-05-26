@@ -6,7 +6,7 @@ mod tests {
     use ark_std::{end_timer, start_timer};
     use env_logger::Env;
     use group::{Curve, Group};
-    use halo2_proofs::arithmetic::{CurveAffine, Field};
+    use halo2_proofs::arithmetic::{BaseExt, CurveAffine, Field};
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
     use halo2_proofs::{
         pairing::bn256::{Bn256, Fr, G1Affine},
@@ -17,7 +17,10 @@ mod tests {
     use rand_xorshift::XorShiftRng;
     use secp256k1::Secp256k1Affine;
     use std::marker::PhantomData;
-    use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, TxCircuit};
+    use zkevm_circuits::tx_circuit::{
+        sign_verify::{SignVerifyChip, POW_RAND_SIZE, VERIF_HEIGHT},
+        TxCircuit,
+    };
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -39,6 +42,11 @@ mod tests {
         let txs = Vec::new();
 
         let randomness = Fr::random(&mut rng);
+        let mut instances: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
+            .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); txs.len() * VERIF_HEIGHT])
+            .collect();
+        // SignVerifyChip -> ECDSAChip -> MainGate instance column
+        instances.push(vec![]);
         let circuit = TxCircuit::<Fr, MAX_TXS, MAX_CALLDATA> {
             sign_verify: SignVerifyChip {
                 aux_generator,
@@ -70,11 +78,12 @@ mod tests {
         // Bench proof generation time
         let proof_message = format!("State Proof generation with {} degree", DEGREE);
         let start2 = start_timer!(|| proof_message);
+        let instances_slice: Vec<&[Fr]> = instances.iter().map(|v| &v[..]).collect();
         create_proof(
             &general_params,
             &pk,
             &[circuit],
-            &[&[]],
+            &[&instances_slice[..]],
             rng,
             &mut transcript,
         )
@@ -91,7 +100,7 @@ mod tests {
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[&[]],
+            &[&instances_slice[..]],
             &mut verifier_transcript,
         )
         .expect("failed to verify bench circuit");
