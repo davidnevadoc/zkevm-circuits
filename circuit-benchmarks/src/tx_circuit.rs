@@ -76,7 +76,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("State Proof generation with {} degree", DEGREE);
+        let proof_message = format!("Tx Proof generation with {} degree", DEGREE);
         let start2 = start_timer!(|| proof_message);
         let instances_slice: Vec<&[Fr]> = instances.iter().map(|v| &v[..]).collect();
         create_proof(
@@ -92,7 +92,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "State Proof verification");
+        let start3 = start_timer!(|| "Tx Proof verification");
         let mut verifier_transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleVerifier::new(&verifier_params);
 
